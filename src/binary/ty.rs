@@ -13,7 +13,7 @@ pub enum Composite {
     Fn {
         params: Vec<Value>,
         returns: Vec<Value>,
-    }
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
