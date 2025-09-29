@@ -4,15 +4,15 @@ pub mod value;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Module {
-    pub func_section: FuncSection,
-    pub type_section: TypeSection,
-    pub code_section: CodeSection,
+    pub func_section: Option<FuncSection>,
+    pub type_section: Option<TypeSection>,
+    pub code_section: Option<CodeSection>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Index<T>(pub u32, std::marker::PhantomData<T>);
 pub type TypeIndex = Index<ty::Recursive>;
-pub type LocalIndex = Index<Local>;
+pub type LocalIndex = Index<ty::Value>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TypeSection(pub Vec<ty::Recursive>);

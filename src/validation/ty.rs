@@ -4,21 +4,30 @@ pub struct Recursive(pub Vec<Sub>);
 #[derive(Debug, PartialEq, Eq)]
 pub struct Sub {
     pub is_final: bool,
-    pub supers: Vec<super::TypeIndex>,
+    pub supers: Vec<TypeUse>,
     pub ty: Composite,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Composite {
-    Func {
-        params: Vec<Value>,
-        returns: Vec<Value>,
-    },
+    Func(Func),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Func {
+    params: Vec<Value>,
+    returns: Vec<Value>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TypeUse {
+    Index(super::TypeIndex),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Value {
     Num(Number),
+    Bottom,
 }
 
 #[derive(Debug, PartialEq, Eq)]
