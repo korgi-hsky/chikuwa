@@ -4,9 +4,9 @@ pub mod value;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Module {
-    pub func_sections: Vec<FuncSection>,
-    pub type_sections: Vec<TypeSection>,
-    pub code_sections: Vec<CodeSection>,
+    pub func_section: FuncSection,
+    pub type_section: TypeSection,
+    pub code_section: CodeSection,
 }
 
 #[derive(Debug, PartialEq, Eq)]
