@@ -15,6 +15,12 @@ impl std::ops::Deref for Recursive {
     }
 }
 
+impl From<crate::binary::ty::Recursive> for Recursive {
+    fn from(value: crate::binary::ty::Recursive) -> Self {
+        Self::new(value.0.into_iter().map(Into::into).collect())
+    }
+}
+
 impl Recursive {
     pub fn new(value: Vec<Sub>) -> Self {
         Self {
@@ -95,6 +101,12 @@ pub enum TypeUse {
     Def(DefinedRef),
 }
 
+impl From<u32> for TypeUse {
+    fn from(value: u32) -> Self {
+        Self::TypeIdx(value as usize)
+    }
+}
+
 impl TypeUse {
     fn rollup(&self, start: usize, end: usize) -> Self {
         match self {
@@ -118,6 +130,16 @@ pub struct Sub {
     pub body: Composite,
 }
 
+impl From<crate::binary::ty::Sub> for Sub {
+    fn from(value: crate::binary::ty::Sub) -> Self {
+        Self {
+            is_final: value.is_final,
+            supers: value.supers.into_iter().map(Into::into).collect(),
+            body: value.ty.into(),
+        }
+    }
+}
+
 impl Sub {
     fn rollup(&self, start: usize, end: usize) -> Self {
         Self {
@@ -139,6 +161,17 @@ impl Sub {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Composite {
     Func(Func),
+}
+
+impl From<crate::binary::ty::Composite> for Composite {
+    fn from(value: crate::binary::ty::Composite) -> Self {
+        match value {
+            crate::binary::ty::Composite::Func { params, returns } => Self::Func(Func {
+                params: params.into_iter().map(Into::into).collect(),
+                returns: returns.into_iter().map(Into::into).collect(),
+            }),
+        }
+    }
 }
 
 impl Composite {
@@ -183,6 +216,14 @@ pub enum Value {
     Bottom,
 }
 
+impl From<crate::binary::ty::Value> for Value {
+    fn from(value: crate::binary::ty::Value) -> Self {
+        match value {
+            crate::binary::ty::Value::Num(n) => Self::Num(n.into()),
+        }
+    }
+}
+
 impl Value {
     fn rollup(&self, start: usize, end: usize) -> Self {
         _ = (start, end);
@@ -198,4 +239,12 @@ impl Value {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Number {
     I32,
+}
+
+impl From<crate::binary::ty::Number> for Number {
+    fn from(value: crate::binary::ty::Number) -> Self {
+        match value {
+            crate::binary::ty::Number::I32 => Self::I32,
+        }
+    }
 }
