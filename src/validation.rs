@@ -1,16 +1,17 @@
 pub mod instr;
 pub mod ty;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Context {
+    pub types: Vec<ty::Defined>,
+    pub recs: Vec<ty::Sub>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Module {
     pub types: Vec<ty::Recursive>,
     pub funcs: Vec<Func>,
 }
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Index<T>(pub usize, std::marker::PhantomData<T>);
-pub type TypeIndex = Index<ty::Recursive>;
-pub type LocalIndex = Index<ty::Value>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Func {
