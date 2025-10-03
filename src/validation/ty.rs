@@ -22,7 +22,7 @@ impl From<crate::binary::ty::Recursive> for Recursive {
 }
 
 impl Recursive {
-    pub fn new(value: Vec<Sub>) -> Self {
+    fn new(value: Vec<Sub>) -> Self {
         Self {
             inner: std::rc::Rc::new(RecursiveInner { types: value }),
         }
@@ -39,6 +39,12 @@ impl Recursive {
 
     fn unroll(&self) -> Self {
         Self::new(self.iter().map(|s| s.unroll(self)).collect())
+    }
+
+    pub fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
+        cx.recs = self.inner.types.clone();
+        self.iter().try_for_each(|s| s.validate(cx))?;
+        Ok(())
     }
 }
 
@@ -77,19 +83,22 @@ impl DefinedRef {
 }
 
 impl DefinedRef {
-    pub fn rec(&self) -> Recursive {
-        Recursive {
-            inner: self
-                .rec
-                .upgrade()
-                .expect("`DefinedRef` should be used inside `Recursive`"),
+    pub fn get(&self) -> Defined {
+        Defined {
+            rec: Recursive {
+                inner: self
+                    .rec
+                    .upgrade()
+                    .expect("`DefinedRef` should be used inside `Recursive`"),
+            },
+            proj: self.proj,
         }
     }
 }
 
 impl PartialEq for DefinedRef {
     fn eq(&self, other: &Self) -> bool {
-        self.proj == other.proj && self.rec() == other.rec()
+        self.proj == other.proj && self.get() == other.get()
     }
 }
 impl Eq for DefinedRef {}
@@ -119,6 +128,32 @@ impl TypeUse {
         match self {
             Self::RecTypeIdx(i) => Self::Def(DefinedRef::new(rec, *i)),
             other => other.clone(),
+        }
+    }
+
+    fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
+        match self {
+            Self::TypeIdx(i) => {
+                anyhow::ensure!(*i < cx.types.len(), "type {i} is not defined");
+            }
+            Self::RecTypeIdx(i) => {
+                anyhow::ensure!(*i < cx.recs.len(), "recursive type {i} is not defined");
+            }
+            Self::Def(def) => {
+                let Defined { rec, proj } = def.get();
+                rec.validate(cx)?;
+                anyhow::ensure!(proj < rec.len(), "sub type {proj} is not defined");
+            }
+        }
+        Ok(())
+    }
+
+    /// [`self`] should be already validated.
+    fn get_type(&self, cx: &mut super::Context) -> Sub {
+        match self {
+            Self::TypeIdx(i) => cx.types[*i].unroll(),
+            Self::RecTypeIdx(i) => cx.recs[*i].clone(),
+            Self::Def(def) => def.get().unroll(),
         }
     }
 }
@@ -156,6 +191,21 @@ impl Sub {
             body: self.body.unroll(rec),
         }
     }
+
+    fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.supers.len() <= 1,
+            "more than one supertype is not allowed",
+        );
+        for u in &self.supers {
+            u.validate(cx)?;
+            let sup = u.get_type(cx);
+            anyhow::ensure!(!sup.is_final, "cannot specify final type as supertype");
+            // TODO: check subtyping `self <: sup`
+        }
+        self.body.validate()?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -186,6 +236,12 @@ impl Composite {
             Self::Func(f) => Self::Func(f.unroll(rec)),
         }
     }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            Self::Func(f) => f.validate(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,6 +263,13 @@ impl Func {
             params: self.params.iter().map(|v| v.unroll(rec)).collect(),
             returns: self.returns.iter().map(|v| v.unroll(rec)).collect(),
         }
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        self.params
+            .iter()
+            .chain(&self.returns)
+            .try_for_each(|v| v.validate())
     }
 }
 
@@ -233,6 +296,10 @@ impl Value {
     fn unroll(&self, rec: &Recursive) -> Self {
         _ = rec;
         self.clone()
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
