@@ -1,6 +1,6 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Recursive {
-    inner: std::rc::Rc<RecursiveInner>,
+    inner: Box<RecursiveInner>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,7 +24,7 @@ impl From<crate::binary::ty::Recursive> for Recursive {
 impl Recursive {
     fn new(value: Vec<Sub>) -> Self {
         Self {
-            inner: std::rc::Rc::new(RecursiveInner { types: value }),
+            inner: RecursiveInner { types: value }.into(),
         }
     }
 
@@ -67,47 +67,11 @@ impl Defined {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct DefinedRef {
-    rec: std::rc::Weak<RecursiveInner>,
-    proj: usize,
-}
-
-impl DefinedRef {
-    fn new(rec: &Recursive, proj: usize) -> Self {
-        Self {
-            rec: std::rc::Rc::downgrade(&rec.inner),
-            proj,
-        }
-    }
-}
-
-impl DefinedRef {
-    pub fn get(&self) -> Defined {
-        Defined {
-            rec: Recursive {
-                inner: self
-                    .rec
-                    .upgrade()
-                    .expect("`DefinedRef` should be used inside `Recursive`"),
-            },
-            proj: self.proj,
-        }
-    }
-}
-
-impl PartialEq for DefinedRef {
-    fn eq(&self, other: &Self) -> bool {
-        self.proj == other.proj && self.get() == other.get()
-    }
-}
-impl Eq for DefinedRef {}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeUse {
     TypeIdx(usize),
     RecTypeIdx(usize),
-    Def(DefinedRef),
+    Def(Defined),
 }
 
 impl From<u32> for TypeUse {
@@ -126,7 +90,7 @@ impl TypeUse {
 
     fn unroll(&self, rec: &Recursive) -> Self {
         match self {
-            Self::RecTypeIdx(i) => Self::Def(DefinedRef::new(rec, *i)),
+            Self::RecTypeIdx(i) => Self::Def(Defined::new(rec, *i)),
             other => other.clone(),
         }
     }
@@ -140,9 +104,9 @@ impl TypeUse {
                 anyhow::ensure!(*i < cx.recs.len(), "recursive type {i} is not defined");
             }
             Self::Def(def) => {
-                let Defined { rec, proj } = def.get();
+                let Defined { rec, proj } = def;
                 rec.validate(cx)?;
-                anyhow::ensure!(proj < rec.len(), "sub type {proj} is not defined");
+                anyhow::ensure!(*proj < rec.len(), "sub type {proj} is not defined");
             }
         }
         Ok(())
@@ -153,7 +117,7 @@ impl TypeUse {
         match self {
             Self::TypeIdx(i) => cx.types[*i].unroll(),
             Self::RecTypeIdx(i) => cx.recs[*i].clone(),
-            Self::Def(def) => def.get().unroll(),
+            Self::Def(def) => def.unroll(),
         }
     }
 }
