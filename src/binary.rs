@@ -10,15 +10,10 @@ pub struct Module {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Index<T>(pub u32, std::marker::PhantomData<T>);
-pub type TypeIndex = Index<ty::Recursive>;
-pub type LocalIndex = Index<ty::Value>;
-
-#[derive(Debug, PartialEq, Eq)]
 pub struct TypeSection(pub Vec<ty::Recursive>);
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct FuncSection(pub Vec<TypeIndex>);
+pub struct FuncSection(pub Vec<u32>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CodeSection(pub Vec<Func>);

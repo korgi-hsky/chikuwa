@@ -4,7 +4,7 @@ pub enum Instruction {
     Nop,
 
     // variable
-    LocalGet(super::LocalIndex),
+    LocalGet(u32),
 
     // numeric
     I32Add,
