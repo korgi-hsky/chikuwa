@@ -67,6 +67,24 @@ impl Defined {
     }
 }
 
+trait Substitute: Sized {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self;
+
+    fn rollup(&self, start: usize, end: usize) -> Self {
+        self.substitute(&|u| match u {
+            TypeUse::TypeIdx(i) if (start..end).contains(i) => TypeUse::RecTypeIdx(i - start),
+            other => other.clone(),
+        })
+    }
+
+    fn unroll(&self, rec: &Recursive) -> Self {
+        self.substitute(&|u| match u {
+            TypeUse::RecTypeIdx(i) => TypeUse::Def(Defined::new(rec, *i)),
+            other => other.clone(),
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeUse {
     TypeIdx(usize),
@@ -80,21 +98,13 @@ impl From<u32> for TypeUse {
     }
 }
 
+impl Substitute for TypeUse {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        f(self)
+    }
+}
+
 impl TypeUse {
-    fn rollup(&self, start: usize, end: usize) -> Self {
-        match self {
-            Self::TypeIdx(i) if (start..end).contains(i) => Self::RecTypeIdx(i - start),
-            other => other.clone(),
-        }
-    }
-
-    fn unroll(&self, rec: &Recursive) -> Self {
-        match self {
-            Self::RecTypeIdx(i) => Self::Def(Defined::new(rec, *i)),
-            other => other.clone(),
-        }
-    }
-
     fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
         match self {
             Self::TypeIdx(i) => {
@@ -139,23 +149,17 @@ impl From<crate::binary::ty::Sub> for Sub {
     }
 }
 
+impl Substitute for Sub {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        Self {
+            is_final: self.is_final,
+            supers: self.supers.iter().map(|u| u.substitute(f)).collect(),
+            body: self.body.substitute(f),
+        }
+    }
+}
+
 impl Sub {
-    fn rollup(&self, start: usize, end: usize) -> Self {
-        Self {
-            is_final: self.is_final,
-            supers: self.supers.iter().map(|u| u.rollup(start, end)).collect(),
-            body: self.body.rollup(start, end),
-        }
-    }
-
-    fn unroll(&self, rec: &Recursive) -> Self {
-        Self {
-            is_final: self.is_final,
-            supers: self.supers.iter().map(|u| u.unroll(rec)).collect(),
-            body: self.body.unroll(rec),
-        }
-    }
-
     fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.supers.len() <= 1,
@@ -188,19 +192,15 @@ impl From<crate::binary::ty::Composite> for Composite {
     }
 }
 
+impl Substitute for Composite {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        match self {
+            Self::Func(func) => Self::Func(func.substitute(f)),
+        }
+    }
+}
+
 impl Composite {
-    fn rollup(&self, start: usize, end: usize) -> Self {
-        match self {
-            Self::Func(f) => Self::Func(f.rollup(start, end)),
-        }
-    }
-
-    fn unroll(&self, rec: &Recursive) -> Self {
-        match self {
-            Self::Func(f) => Self::Func(f.unroll(rec)),
-        }
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         match self {
             Self::Func(f) => f.validate(),
@@ -214,21 +214,16 @@ pub struct Func {
     returns: Vec<Value>,
 }
 
+impl Substitute for Func {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        Self {
+            params: self.params.iter().map(|v| v.substitute(f)).collect(),
+            returns: self.returns.iter().map(|v| v.substitute(f)).collect(),
+        }
+    }
+}
+
 impl Func {
-    fn rollup(&self, start: usize, end: usize) -> Self {
-        Self {
-            params: self.params.iter().map(|v| v.rollup(start, end)).collect(),
-            returns: self.returns.iter().map(|v| v.rollup(start, end)).collect(),
-        }
-    }
-
-    fn unroll(&self, rec: &Recursive) -> Self {
-        Self {
-            params: self.params.iter().map(|v| v.unroll(rec)).collect(),
-            returns: self.returns.iter().map(|v| v.unroll(rec)).collect(),
-        }
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         self.params
             .iter()
@@ -251,17 +246,16 @@ impl From<crate::binary::ty::Value> for Value {
     }
 }
 
+impl Substitute for Value {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        match self {
+            Self::Num(n) => Self::Num(n.substitute(f)),
+            Self::Bottom => Self::Bottom,
+        }
+    }
+}
+
 impl Value {
-    fn rollup(&self, start: usize, end: usize) -> Self {
-        _ = (start, end);
-        self.clone()
-    }
-
-    fn unroll(&self, rec: &Recursive) -> Self {
-        _ = rec;
-        self.clone()
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         Ok(())
     }
@@ -277,5 +271,11 @@ impl From<crate::binary::ty::Number> for Number {
         match value {
             crate::binary::ty::Number::I32 => Self::I32,
         }
+    }
+}
+
+impl Substitute for Number {
+    fn substitute(&self, _f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        self.clone()
     }
 }
