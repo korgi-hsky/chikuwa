@@ -1,73 +1,23 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Recursive {
-    inner: Box<RecursiveInner>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct RecursiveInner {
-    types: Vec<Sub>,
-}
-
-impl std::ops::Deref for Recursive {
-    type Target = Vec<Sub>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner.deref().types
-    }
-}
-
-impl From<crate::binary::ty::Recursive> for Recursive {
-    fn from(value: crate::binary::ty::Recursive) -> Self {
-        Self::new(value.0.into_iter().map(Into::into).collect())
-    }
-}
-
-impl Recursive {
-    fn new(value: Vec<Sub>) -> Self {
-        Self {
-            inner: RecursiveInner { types: value }.into(),
-        }
-    }
-
-    pub fn rollup(&self, start_typeidx: usize) -> Vec<Defined> {
-        let start = start_typeidx;
-        let end = start + self.len();
-        let rec = Self::new(self.iter().map(|s| s.rollup(start, end)).collect());
-        (0..self.len())
-            .map(|proj| Defined::new(&rec, proj))
-            .collect()
-    }
-
-    fn unroll(&self) -> Self {
-        Self::new(self.iter().map(|s| s.unroll(self)).collect())
-    }
-
-    fn close(&self, cx: &super::Context) -> Self {
-        Self::new(self.iter().map(|s| s.close(cx)).collect())
-    }
-
-    pub fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
-        cx.recs = self.inner.types.clone();
-        self.iter().try_for_each(|s| s.validate(cx))?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Defined {
     rec: Recursive,
     proj: usize,
 }
 
 impl Defined {
-    pub fn new(rec: &Recursive, proj: usize) -> Self {
-        Self {
-            rec: rec.clone(),
-            proj,
-        }
+    pub fn new(rec: Recursive, proj: usize) -> Self {
+        Self { rec, proj }
+    }
+
+    pub fn rollup(rec: &Recursive, start_typeidx: usize) -> Vec<Self> {
+        let rec = rec.rollup(start_typeidx, start_typeidx + rec.len());
+        (0..rec.len())
+            .map(|proj| Self::new(rec.clone(), proj))
+            .collect()
     }
 
     pub fn unroll(&self) -> Sub {
-        self.rec.unroll()[self.proj].clone()
+        self.rec.unroll(&self.rec)[self.proj].clone()
     }
 
     pub fn close(&self, cx: &super::Context) -> Self {
@@ -90,17 +40,52 @@ trait Substitute: Sized {
 
     fn unroll(&self, rec: &Recursive) -> Self {
         self.substitute(&|u| match u {
-            TypeUse::RecTypeIdx(i) => TypeUse::Def(Defined::new(rec, *i)),
+            TypeUse::RecTypeIdx(i) => TypeUse::Def(Defined::new(rec.clone(), *i)),
             other => other.clone(),
         })
     }
 
     fn close(&self, cx: &super::Context) -> Self {
         self.substitute(&|u| match u {
-            // Circular typeidx references are eliminated by rolling up recursive types
             TypeUse::TypeIdx(i) => TypeUse::Def(cx.types[*i].close(cx)),
             other => other.clone(),
         })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recursive {
+    pub types: Vec<Sub>,
+}
+
+impl std::ops::Deref for Recursive {
+    type Target = Vec<Sub>;
+    fn deref(&self) -> &Self::Target {
+        &self.types
+    }
+}
+
+impl From<crate::binary::ty::Recursive> for Recursive {
+    fn from(value: crate::binary::ty::Recursive) -> Self {
+        Self::new(value.0.into_iter().map(Into::into).collect())
+    }
+}
+
+impl Substitute for Recursive {
+    fn substitute(&self, f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
+        Self::new(self.iter().map(|s| s.substitute(f)).collect())
+    }
+}
+
+impl Recursive {
+    fn new(types: Vec<Sub>) -> Self {
+        Self { types }
+    }
+
+    pub fn validate(&self, cx: &mut super::Context) -> anyhow::Result<()> {
+        cx.recs = self.types.clone();
+        self.iter().try_for_each(|s| s.validate(cx))?;
+        Ok(())
     }
 }
 
@@ -141,7 +126,7 @@ impl TypeUse {
         Ok(())
     }
 
-    /// [`self`] should be already validated.
+    /// Ensure that [`self`] is valid.
     fn get_type(&self, cx: &mut super::Context) -> Sub {
         match self {
             Self::TypeIdx(i) => cx.types[*i].unroll(),
@@ -267,7 +252,8 @@ impl Func {
         // self.returns <: other.returns
         // -----------------------------
         //         self <: other
-        other.params
+        other
+            .params
             .iter()
             .zip(&self.params)
             .try_for_each(|(a, b)| a.should_be(b))?;

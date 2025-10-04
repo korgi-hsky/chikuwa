@@ -22,7 +22,7 @@ impl TryFrom<crate::binary::Module> for Module {
 
         for raw in value.type_section.map_or_else(Vec::new, |s| s.0) {
             let rec = ty::Recursive::from(raw);
-            cx.types.extend(rec.rollup(cx.types.len()));
+            cx.types.extend(ty::Defined::rollup(&rec, cx.types.len()));
             rec.validate(&mut cx)?;
             module.types.push(rec);
         }
