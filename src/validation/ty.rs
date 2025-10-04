@@ -188,7 +188,7 @@ impl Sub {
             u.validate(cx)?;
             let sup = u.get_type(cx);
             anyhow::ensure!(!sup.is_final, "cannot specify final type as supertype");
-            // TODO: check subtyping `self <: sup`
+            self.body.should_be(&sup.body)?;
         }
         self.body.validate()?;
         Ok(())
@@ -225,6 +225,12 @@ impl Composite {
             Self::Func(f) => f.validate(),
         }
     }
+
+    fn should_be(&self, other: &Self) -> anyhow::Result<()> {
+        match (self, other) {
+            (Self::Func(a), Self::Func(b)) => a.should_be(b),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -248,6 +254,28 @@ impl Func {
             .iter()
             .chain(&self.returns)
             .try_for_each(|v| v.validate())
+    }
+
+    fn should_be(&self, other: &Self) -> anyhow::Result<()> {
+        if self.params.len() != other.params.len() {
+            return subtyping_err(&self.params, &other.params);
+        }
+        if self.returns.len() != other.returns.len() {
+            return subtyping_err(&self.returns, &other.returns);
+        }
+        // other.params <: self.params
+        // self.returns <: other.returns
+        // -----------------------------
+        //         self <: other
+        other.params
+            .iter()
+            .zip(&self.params)
+            .try_for_each(|(a, b)| a.should_be(b))?;
+        self.returns
+            .iter()
+            .zip(&other.returns)
+            .try_for_each(|(a, b)| a.should_be(b))?;
+        Ok(())
     }
 }
 
@@ -278,6 +306,14 @@ impl Value {
     fn validate(&self) -> anyhow::Result<()> {
         Ok(())
     }
+
+    fn should_be(&self, other: &Self) -> anyhow::Result<()> {
+        match (self, other) {
+            (Self::Bottom, _) => Ok(()),
+            (Self::Num(a), Self::Num(b)) => a.should_be(b),
+            _ => subtyping_err(self, other),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -297,4 +333,16 @@ impl Substitute for Number {
     fn substitute(&self, _f: &impl Fn(&TypeUse) -> TypeUse) -> Self {
         self.clone()
     }
+}
+
+impl Number {
+    fn should_be(&self, other: &Self) -> anyhow::Result<()> {
+        match (self, other) {
+            (Self::I32, Self::I32) => Ok(()),
+        }
+    }
+}
+
+fn subtyping_err<T: std::fmt::Debug>(a: &T, b: &T) -> anyhow::Result<()> {
+    anyhow::bail!("{a:?} is not a subtype of {b:?}");
 }
