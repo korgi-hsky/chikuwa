@@ -21,7 +21,7 @@ pub struct Func {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TypeUse {
-    Index(super::TypeIndex),
+    Index(u32),
 }
 
 #[derive(Debug, PartialEq, Eq)]

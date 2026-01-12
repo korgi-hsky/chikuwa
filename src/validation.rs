@@ -8,11 +8,6 @@ pub struct Module {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Index<T>(pub usize, std::marker::PhantomData<T>);
-pub type TypeIndex = Index<ty::Recursive>;
-pub type LocalIndex = Index<ty::Value>;
-
-#[derive(Debug, PartialEq, Eq)]
 pub struct Func {
     pub ty: ty::Func,
     pub locals: Vec<ty::Value>,

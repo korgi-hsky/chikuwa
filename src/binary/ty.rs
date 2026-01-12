@@ -4,7 +4,7 @@ pub struct Recursive(pub Vec<Sub>);
 #[derive(Debug, PartialEq, Eq)]
 pub struct Sub {
     pub is_final: bool,
-    pub supers: Vec<super::TypeIndex>,
+    pub supers: Vec<u32>,
     pub ty: Composite,
 }
 
