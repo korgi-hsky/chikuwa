@@ -15,6 +15,10 @@ impl Module {
         let mut bytes = decode::ByteReader::new(reader);
         bytes.decode()
     }
+
+    pub fn decode_bytes(bytes: Vec<u8>) -> anyhow::Result<Self> {
+        Self::decode(std::io::Cursor::new(bytes))
+    }
 }
 
 impl<R: std::io::Read> decode::Decode<R> for Module {
@@ -156,7 +160,7 @@ mod tests {
         let wasm = wat::parse_str("(module)")?;
         assert_eq!(
             Module::default(),
-            Module::decode(std::io::Cursor::new(wasm))?,
+            Module::decode_bytes(wasm)?,
         );
         Ok(())
     }
@@ -180,7 +184,7 @@ mod tests {
                     expr: instr::Expression(vec![instr::Instruction::End]),
                 }])),
             },
-            Module::decode(std::io::Cursor::new(wasm))?,
+            Module::decode_bytes(wasm)?,
         );
         Ok(())
     }
