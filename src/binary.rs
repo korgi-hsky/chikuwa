@@ -156,17 +156,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn minimal_module() -> anyhow::Result<()> {
+    fn decode_minimal_module() -> anyhow::Result<()> {
         let wasm = wat::parse_str("(module)")?;
-        assert_eq!(
-            Module::default(),
-            Module::decode_bytes(wasm)?,
-        );
+        assert_eq!(Module::default(), Module::decode_bytes(wasm)?);
         Ok(())
     }
 
     #[test]
-    fn empty_function() -> anyhow::Result<()> {
+    fn decode_empty_function() -> anyhow::Result<()> {
         let wasm = wat::parse_str("(module (func))")?;
         assert_eq!(
             Module {
@@ -175,13 +172,112 @@ mod tests {
                     supers: vec![],
                     ty: ty::Composite::Func {
                         params: vec![],
-                        returns: vec![]
+                        returns: vec![],
                     },
                 }])])),
                 func_section: Some(FuncSection(vec![0])),
                 code_section: Some(CodeSection(vec![Func {
                     locals: vec![],
                     expr: instr::Expression(vec![instr::Instruction::End]),
+                }])),
+            },
+            Module::decode_bytes(wasm)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decode_function_with_params() -> anyhow::Result<()> {
+        let wasm = wat::parse_str("(module (func (param i32 i64)))")?;
+        assert_eq!(
+            Module {
+                type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
+                    is_final: true,
+                    supers: vec![],
+                    ty: ty::Composite::Func {
+                        params: vec![
+                            ty::Value::Num(ty::Number::I32),
+                            ty::Value::Num(ty::Number::I64),
+                        ],
+                        returns: vec![],
+                    },
+                }])])),
+                func_section: Some(FuncSection(vec![0])),
+                code_section: Some(CodeSection(vec![Func {
+                    locals: vec![],
+                    expr: instr::Expression(vec![instr::Instruction::End]),
+                }])),
+            },
+            Module::decode_bytes(wasm)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decode_function_with_locals() -> anyhow::Result<()> {
+        let wasm = wat::parse_str("(module (func (local i32) (local i64 i64)))")?;
+        assert_eq!(
+            Module {
+                type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
+                    is_final: true,
+                    supers: vec![],
+                    ty: ty::Composite::Func {
+                        params: vec![],
+                        returns: vec![],
+                    },
+                }])])),
+                func_section: Some(FuncSection(vec![0])),
+                code_section: Some(CodeSection(vec![Func {
+                    locals: vec![
+                        Local {
+                            num: 1,
+                            ty: ty::Value::Num(ty::Number::I32),
+                        },
+                        Local {
+                            num: 2,
+                            ty: ty::Value::Num(ty::Number::I64),
+                        },
+                    ],
+                    expr: instr::Expression(vec![instr::Instruction::End]),
+                }])),
+            },
+            Module::decode_bytes(wasm)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decode_function_i32_add() -> anyhow::Result<()> {
+        let wasm = wat::parse_str(
+            "
+(module
+    (func (param i32 i32) (result i32)
+        (local.get 0)
+        (local.get 1)
+        i32.add))",
+        )?;
+        assert_eq!(
+            Module {
+                type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
+                    is_final: true,
+                    supers: vec![],
+                    ty: ty::Composite::Func {
+                        params: vec![
+                            ty::Value::Num(ty::Number::I32),
+                            ty::Value::Num(ty::Number::I32),
+                        ],
+                        returns: vec![ty::Value::Num(ty::Number::I32)],
+                    },
+                }])])),
+                func_section: Some(FuncSection(vec![0])),
+                code_section: Some(CodeSection(vec![Func {
+                    locals: vec![],
+                    expr: instr::Expression(vec![
+                        instr::Instruction::LocalGet(0),
+                        instr::Instruction::LocalGet(1),
+                        instr::Instruction::I32Add,
+                        instr::Instruction::End,
+                    ]),
                 }])),
             },
             Module::decode_bytes(wasm)?,

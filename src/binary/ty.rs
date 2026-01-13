@@ -194,12 +194,18 @@ impl super::decode::DecodeTag for Value {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Number {
+    F64,
+    F32,
+    I64,
     I32,
 }
 
 impl super::decode::DecodeTag for Number {
     fn decode_tag(byte: u8) -> Option<Self> {
         match byte {
+            0x7c => Some(Self::F64),
+            0x7d => Some(Self::F32),
+            0x7e => Some(Self::I64),
             0x7f => Some(Self::I32),
             _ => None,
         }
