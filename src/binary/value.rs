@@ -190,12 +190,12 @@ where
                 "overflowed `s{N}`"
             );
         }
-        let sign_extended = if is_positive {
+        let sign_extend = if is_positive {
             I::from(0)
         } else {
             !I::from(0) << SignedIntByte::LAST_BIT_COUNT
         };
-        result |= (sign_extended | I::from(last_byte.cast_signed())) << shift;
+        result |= (sign_extend | I::from(last_byte.cast_signed())) << shift;
         Ok(Self(result))
     }
 }

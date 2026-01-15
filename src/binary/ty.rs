@@ -394,7 +394,7 @@ impl<R: std::io::Read> super::decode::Decode<R> for Sub {
     }
 }
 
-// Address Type
+// Address Types
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Address {
@@ -448,7 +448,7 @@ impl<R: std::io::Read> super::decode::Decode<R> for Limit {
     }
 }
 
-// Tag Type
+// Tag Types
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Tag(pub u32);
@@ -548,10 +548,7 @@ impl super::decode::DecodeTag for ExternalTag {
 impl<R: std::io::Read> super::decode::Decode<R> for External {
     type Tag = ExternalTag;
 
-    fn decode(
-        bytes: &mut super::decode::ByteReader<R>,
-        tag: <Self as super::decode::Decode<R>>::Tag,
-    ) -> anyhow::Result<Self> {
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: ExternalTag) -> anyhow::Result<Self> {
         match tag {
             ExternalTag::Func => bytes.decode().map(Self::Func),
             ExternalTag::Table => bytes.decode().map(Self::Table),
