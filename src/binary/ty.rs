@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Recursive(pub Vec<Sub>);
 
@@ -306,21 +308,24 @@ impl<R: std::io::Read> super::decode::Decode<R> for Reference {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Heap {
     Abstract(AbsHeap),
-    Concrete(u32), // type index
+    Concrete(u32), // type index encoded as `s33`
 }
 
 pub enum HeapTag {
     Abstract(AbsHeap),
-    Concrete(u8),
+    Concrete(super::value::SignedIntByte),
 }
 
 impl super::decode::DecodeTag for HeapTag {
     fn decode_tag(byte: u8) -> Option<Self> {
-        if byte & 0b1100_0000 == 0 {
-            // s33 can be decoded as a positive value
+        if let Some(abs) = AbsHeap::decode_tag(byte) {
+            return Some(Self::Abstract(abs));
+        }
+        let byte = super::value::SignedIntByte::decode_tag(byte)?;
+        if !matches!(byte, crate::binary::value::SignedIntByte::LastNegative(_)) {
             Some(Self::Concrete(byte))
         } else {
-            AbsHeap::decode_tag(byte).map(Self::Abstract)
+            None
         }
     }
 }
@@ -332,9 +337,8 @@ impl<R: std::io::Read> super::decode::Decode<R> for Heap {
         Ok(match tag {
             HeapTag::Abstract(abs) => Self::Abstract(abs),
             HeapTag::Concrete(byte) => {
-                _ = byte;
-                _ = bytes;
-                unimplemented!("decode `s33`");
+                let int = bytes.decode_with_tag::<super::value::SignedInt<33, i64>>(byte)?.0;
+                Self::Concrete(int.try_into().context("invalid type index")?)
             }
         })
     }

@@ -77,8 +77,8 @@ where
 
 #[cfg(test)]
 mod uleb128_tests {
-    use super::*;
     use super::super::decode::ByteReader;
+    use super::*;
 
     #[test]
     fn decode_trailing_zeroes() -> anyhow::Result<()> {
@@ -132,6 +132,12 @@ impl From<u8> for SignedIntByte {
     }
 }
 
+impl super::decode::DecodeTag for SignedIntByte {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        Some(byte.into())
+    }
+}
+
 impl<R: std::io::Read, const N: u8, I> super::decode::Decode<R> for SignedInt<N, I>
 where
     I: From<i8> //
@@ -140,22 +146,31 @@ where
         + std::ops::Not<Output = I>
         + std::ops::Shl<u8, Output = I>,
 {
-    type Tag = ();
+    type Tag = SignedIntByte;
 
-    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
         assert!(N as usize <= std::mem::size_of::<I>() * 8);
         let mut result = I::from(0);
         let mut shift = 0;
-        let (last_byte, is_positive) = loop {
-            match SignedIntByte::from(bytes.next()?) {
-                SignedIntByte::LastPositive(byte) => break (byte, true),
-                SignedIntByte::LastNegative(byte) => break (byte, false),
+        let mut handle_byte = |byte| {
+            Ok(match byte {
+                SignedIntByte::LastPositive(byte) => Some((byte, true)),
+                SignedIntByte::LastNegative(byte) => Some((byte, false)),
                 SignedIntByte::Next(byte) => {
                     result |= I::from(byte.cast_signed()) << shift;
                     shift += SignedIntByte::BIT_COUNT;
+                    anyhow::ensure!(shift < N, "too many bytes encoding `s{N}`");
+                    None
                 }
-            }
-            anyhow::ensure!(shift < N, "too many bytes encoding `s{N}`");
+            })
+        };
+        let (last_byte, is_positive) = match handle_byte(tag)? {
+            Some(value) => value,
+            None => loop {
+                if let Some(value) = handle_byte(bytes.next()?.into())? {
+                    break value;
+                }
+            },
         };
         let remaining_bit_count = N - shift;
         if remaining_bit_count < SignedIntByte::LAST_BIT_COUNT {
@@ -167,20 +182,20 @@ where
                 "overflowed `s{N}`"
             );
         }
-        let sign_extended = I::from(last_byte.cast_signed()) | if is_positive {
+        let sign_extended = if is_positive {
             I::from(0)
         } else {
             !I::from(0) << SignedIntByte::LAST_BIT_COUNT
         };
-        result |= sign_extended << shift;
+        result |= (sign_extended | I::from(last_byte.cast_signed())) << shift;
         Ok(Self(result))
     }
 }
 
 #[cfg(test)]
 mod sleb128_tests {
-    use super::*;
     use super::super::decode::ByteReader;
+    use super::*;
 
     #[test]
     fn decode_trailing_zeroes() -> anyhow::Result<()> {
