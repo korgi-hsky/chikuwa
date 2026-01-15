@@ -22,6 +22,14 @@ impl<R: std::io::Read> super::decode::Decode<R> for u32 {
     }
 }
 
+impl<R: std::io::Read> super::decode::Decode<R> for u64 {
+    type Tag = ();
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        bytes.decode::<UnsignedInt<64, u64>>().map(|i| i.0)
+    }
+}
+
 pub struct UnsignedInt<const N: u8, I>(pub I);
 
 pub enum UnsignedIntByte {

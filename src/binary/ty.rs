@@ -124,7 +124,6 @@ pub struct Reference {
     pub is_nullable: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
 pub enum ReferenceTag {
     Nullable,
     NonNullable,
@@ -392,5 +391,173 @@ impl<R: std::io::Read> super::decode::Decode<R> for Sub {
                 composite: bytes.decode_with_tag(tag)?,
             },
         })
+    }
+}
+
+// Address Type
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Address {
+    I32,
+    I64,
+}
+
+// Limits
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Limit {
+    pub address: Address,
+    pub min: u64,
+    pub max: Option<u64>,
+}
+
+pub enum LimitTag {
+    I32,
+    I32WithMax,
+    I64,
+    I64WithMax,
+}
+
+impl super::decode::DecodeTag for LimitTag {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        Some(match byte {
+            0x00 => Self::I32,
+            0x01 => Self::I32WithMax,
+            0x04 => Self::I64,
+            0x05 => Self::I64WithMax,
+            _ => return None,
+        })
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Limit {
+    type Tag = LimitTag;
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
+        Ok(Self {
+            address: match tag {
+                LimitTag::I32 | LimitTag::I32WithMax => Address::I32,
+                LimitTag::I64 | LimitTag::I64WithMax => Address::I64,
+            },
+            min: bytes.decode()?,
+            max: match tag {
+                LimitTag::I32WithMax | LimitTag::I64WithMax => Some(bytes.decode()?),
+                LimitTag::I32 | LimitTag::I64 => None,
+            },
+        })
+    }
+}
+
+// Tag Type
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Tag(pub u32);
+
+impl<R: std::io::Read> super::decode::Decode<R> for Tag {
+    type Tag = ();
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        bytes.consume_constant(&[0x00])?;
+        bytes.decode().map(Self)
+    }
+}
+
+// Global Types
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Global {
+    pub value: Value,
+    pub is_mutable: bool,
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Global {
+    type Tag = ();
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        Ok(Self {
+            value: bytes.decode()?,
+            is_mutable: matches!(bytes.decode()?, Mutability::Mutable),
+        })
+    }
+}
+
+// Memory Types
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Memory(pub Limit);
+
+impl<R: std::io::Read> super::decode::Decode<R> for Memory {
+    type Tag = ();
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        bytes.decode().map(Self)
+    }
+}
+
+// Table Types
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Table {
+    reference: Reference,
+    limit: Limit,
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Table {
+    type Tag = ();
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        Ok(Self {
+            reference: bytes.decode()?,
+            limit: bytes.decode()?,
+        })
+    }
+}
+
+// External Types
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum External {
+    Func(u32),
+    Table(Table),
+    Memory(Memory),
+    Global(Global),
+    Tag(Tag),
+}
+
+pub enum ExternalTag {
+    Func,
+    Table,
+    Memory,
+    Global,
+    Tag,
+}
+
+impl super::decode::DecodeTag for ExternalTag {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        Some(match byte {
+            0x00 => Self::Func,
+            0x01 => Self::Table,
+            0x02 => Self::Memory,
+            0x03 => Self::Global,
+            0x04 => Self::Tag,
+            _ => return None,
+        })
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for External {
+    type Tag = ExternalTag;
+
+    fn decode(
+        bytes: &mut super::decode::ByteReader<R>,
+        tag: <Self as super::decode::Decode<R>>::Tag,
+    ) -> anyhow::Result<Self> {
+        match tag {
+            ExternalTag::Func => bytes.decode().map(Self::Func),
+            ExternalTag::Table => bytes.decode().map(Self::Table),
+            ExternalTag::Memory => bytes.decode().map(Self::Memory),
+            ExternalTag::Global => bytes.decode().map(Self::Global),
+            ExternalTag::Tag => bytes.decode().map(Self::Tag),
+        }
     }
 }
