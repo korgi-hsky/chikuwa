@@ -457,7 +457,7 @@ impl<R: std::io::Read> super::decode::Decode<R> for Tag {
     type Tag = ();
 
     fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
-        bytes.consume_constant(&[0x00])?;
+        bytes.consume_constant([0x00])?;
         bytes.decode().map(Self)
     }
 }

@@ -11,13 +11,10 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn decode(reader: impl std::io::Read) -> anyhow::Result<Self> {
-        let mut bytes = decode::ByteReader::new(reader);
-        bytes.decode()
-    }
-
-    pub fn decode_bytes(bytes: Vec<u8>) -> anyhow::Result<Self> {
-        Self::decode(std::io::Cursor::new(bytes))
+    pub fn decode<R: std::io::Read>(
+        bytes: impl Into<decode::ByteReader<R>>,
+    ) -> anyhow::Result<Self> {
+        bytes.into().decode()
     }
 }
 
@@ -26,12 +23,13 @@ impl<R: std::io::Read> decode::Decode<R> for Module {
 
     fn decode(bytes: &mut decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
         let mut module = Self::default();
-        bytes.consume_constant("\0asm".as_bytes())?;
-        bytes.consume_constant(&1u32.to_le_bytes())?;
+        bytes.consume_constant("\0asm")?;
+        bytes.consume_constant(1u32.to_le_bytes())?;
         while !bytes.is_finished() {
             let section_id: SectionId = bytes.decode()?;
-            let _byte_count: u32 = bytes.decode()?;
+            let byte_count: u32 = bytes.decode()?;
             match section_id {
+                SectionId::Custom => bytes.skip_bytes(byte_count as usize)?,
                 SectionId::Type => module.type_section = Some(bytes.decode()?),
                 SectionId::Func => module.func_section = Some(bytes.decode()?),
                 SectionId::Code => module.code_section = Some(bytes.decode()?),
@@ -158,7 +156,7 @@ mod tests {
     #[test]
     fn decode_minimal_module() -> anyhow::Result<()> {
         let wasm = wat::parse_str("(module)")?;
-        assert_eq!(Module::default(), Module::decode_bytes(wasm)?);
+        assert_eq!(Module::default(), Module::decode(wasm)?);
         Ok(())
     }
 
@@ -181,7 +179,7 @@ mod tests {
                     expr: instr::Expression(vec![instr::Instruction::End]),
                 }])),
             },
-            Module::decode_bytes(wasm)?,
+            Module::decode(wasm)?,
         );
         Ok(())
     }
@@ -208,7 +206,7 @@ mod tests {
                     expr: instr::Expression(vec![instr::Instruction::End]),
                 }])),
             },
-            Module::decode_bytes(wasm)?,
+            Module::decode(wasm)?,
         );
         Ok(())
     }
@@ -241,7 +239,7 @@ mod tests {
                     expr: instr::Expression(vec![instr::Instruction::End]),
                 }])),
             },
-            Module::decode_bytes(wasm)?,
+            Module::decode(wasm)?,
         );
         Ok(())
     }
@@ -249,12 +247,15 @@ mod tests {
     #[test]
     fn decode_function_i32_add() -> anyhow::Result<()> {
         let wasm = wat::parse_str(
-            "
+            "\
 (module
     (func (param i32 i32) (result i32)
         (local.get 0)
         (local.get 1)
-        i32.add))",
+        i32.add
+    )
+)
+",
         )?;
         assert_eq!(
             Module {
@@ -280,7 +281,66 @@ mod tests {
                     ]),
                 }])),
             },
-            Module::decode_bytes(wasm)?,
+            Module::decode(wasm)?,
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn decode_recursive_struct() -> anyhow::Result<()> {
+        let wasm = wat::parse_str(
+            "\
+(module
+    (rec
+        (type $A (struct
+            (field $b (mut (ref null $B)))
+        ))
+        (type $B (struct
+            (field $a (ref null $A))
+            (field $b (ref $B))
+        ))
+    )
+)
+",
+        )?;
+        assert_eq!(
+            Module {
+                type_section: Some(TypeSection(vec![ty::Recursive(vec![
+                    ty::Sub {
+                        is_final: true,
+                        supers: vec![],
+                        composite: ty::Composite::Struct(vec![ty::Field {
+                            storage: ty::Storage::Value(ty::Value::Ref(ty::Reference {
+                                heap: ty::Heap::Concrete(1),
+                                is_nullable: true,
+                            })),
+                            is_mutable: true,
+                        }])
+                    },
+                    ty::Sub {
+                        is_final: true,
+                        supers: vec![],
+                        composite: ty::Composite::Struct(vec![
+                            ty::Field {
+                                storage: ty::Storage::Value(ty::Value::Ref(ty::Reference {
+                                    heap: ty::Heap::Concrete(0),
+                                    is_nullable: true,
+                                })),
+                                is_mutable: false,
+                            },
+                            ty::Field {
+                                storage: ty::Storage::Value(ty::Value::Ref(ty::Reference {
+                                    heap: ty::Heap::Concrete(1),
+                                    is_nullable: false,
+                                })),
+                                is_mutable: false,
+                            },
+                        ])
+                    },
+                ])])),
+                ..Default::default()
+            },
+            Module::decode(wasm)?,
         );
         Ok(())
     }

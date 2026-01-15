@@ -90,15 +90,20 @@ impl<R: std::io::Read> ByteReader<R> {
         })
     }
 
-    pub fn consume_constant(&mut self, expecteds: &[u8]) -> anyhow::Result<()> {
-        let mut actuals = Vec::with_capacity(expecteds.len());
-        for _ in 0..expecteds.len() {
-            actuals.push(self.next()?);
+    pub fn consume_constant(&mut self, expected: impl AsRef<[u8]>) -> anyhow::Result<()> {
+        let expected = expected.as_ref();
+        let mut actual = Vec::with_capacity(expected.len());
+        for _ in 0..expected.len() {
+            actual.push(self.next()?);
         }
-        anyhow::ensure!(
-            expecteds == actuals,
-            "expected {expecteds:?}, got {actuals:?}"
-        );
+        anyhow::ensure!(expected == actual, "expected {expected:?}, got {actual:?}");
+        Ok(())
+    }
+
+    pub fn skip_bytes(&mut self, count: usize) -> anyhow::Result<()> {
+        for _ in 0..count {
+            self.next()?;
+        }
         Ok(())
     }
 }
