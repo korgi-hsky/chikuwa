@@ -92,7 +92,7 @@ impl super::decode::DecodeTag for HeapTag {
             return Some(Self::Abstract(abs));
         }
         let byte = super::value::SignedIntByte::decode_tag(byte)?;
-        if !matches!(byte, crate::binary::value::SignedIntByte::LastNegative(_)) {
+        if !matches!(byte, super::value::SignedIntByte::LastNegative(_)) {
             Some(Self::Concrete(byte))
         } else {
             None
