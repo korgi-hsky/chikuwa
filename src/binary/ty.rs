@@ -30,7 +30,7 @@ impl<R: std::io::Read> super::decode::Decode<R> for Recursive {
 pub struct Sub {
     pub is_final: bool,
     pub supers: Vec<u32>,
-    pub ty: Composite,
+    pub composite: Composite,
 }
 
 pub enum SubTag {
@@ -57,17 +57,17 @@ impl<R: std::io::Read> super::decode::Decode<R> for Sub {
             SubTag::Final => Self {
                 is_final: true,
                 supers: bytes.decode()?,
-                ty: bytes.decode()?,
+                composite: bytes.decode()?,
             },
             SubTag::NonFinal => Self {
                 is_final: false,
                 supers: bytes.decode()?,
-                ty: bytes.decode()?,
+                composite: bytes.decode()?,
             },
             SubTag::Composite(tag) => Self {
                 is_final: true,
                 supers: vec![],
-                ty: bytes.decode_with_tag(tag)?,
+                composite: bytes.decode_with_tag(tag)?,
             },
         })
     }
@@ -118,7 +118,7 @@ impl<R: std::io::Read> super::decode::Decode<R> for Composite {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Field {
     pub storage: Storage,
-    pub mutability: Mutability,
+    pub is_mutable: bool,
 }
 
 impl<R: std::io::Read> super::decode::Decode<R> for Field {
@@ -127,8 +127,23 @@ impl<R: std::io::Read> super::decode::Decode<R> for Field {
     fn decode(bytes: &mut super::decode::ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
         Ok(Self {
             storage: bytes.decode()?,
-            mutability: bytes.decode()?,
+            is_mutable: matches!(bytes.decode()?, Mutability::Mutable),
         })
+    }
+}
+
+enum Mutability {
+    Immutable,
+    Mutable,
+}
+
+impl super::decode::DecodeTag for Mutability {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        match byte {
+            0x00 => Some(Self::Immutable),
+            0x01 => Some(Self::Mutable),
+            _ => None,
+        }
     }
 }
 
@@ -138,11 +153,26 @@ pub enum Storage {
     Pack(Pack),
 }
 
-impl super::decode::DecodeTag for Storage {
+pub enum StorageTag {
+    Value(ValueTag),
+    Pack(Pack),
+}
+
+impl super::decode::DecodeTag for StorageTag {
     fn decode_tag(byte: u8) -> Option<Self> {
-        Value::decode_tag(byte)
-            .map(Self::Value)
+        None.or_else(|| ValueTag::decode_tag(byte).map(Self::Value))
             .or_else(|| Pack::decode_tag(byte).map(Self::Pack))
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Storage {
+    type Tag = StorageTag;
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
+        Ok(match tag {
+            StorageTag::Value(tag) => Storage::Value(bytes.decode_with_tag(tag)?),
+            StorageTag::Pack(pack) => Storage::Pack(pack),
+        })
     }
 }
 
@@ -163,32 +193,35 @@ impl super::decode::DecodeTag for Pack {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Mutability {
-    Immutable,
-    Mutable,
-}
-
-impl super::decode::DecodeTag for Mutability {
-    fn decode_tag(byte: u8) -> Option<Self> {
-        match byte {
-            0x00 => Some(Self::Immutable),
-            0x01 => Some(Self::Mutable),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
 pub enum Value {
     Num(Number),
     Vec(Vector),
+    Ref(Reference),
 }
 
-impl super::decode::DecodeTag for Value {
+pub enum ValueTag {
+    Num(Number),
+    Vec(Vector),
+    Ref(ReferenceTag),
+}
+
+impl super::decode::DecodeTag for ValueTag {
     fn decode_tag(byte: u8) -> Option<Self> {
-        Number::decode_tag(byte)
-            .map(Self::Num)
+        None.or_else(|| Number::decode_tag(byte).map(Self::Num))
             .or_else(|| Vector::decode_tag(byte).map(Self::Vec))
+            .or_else(|| ReferenceTag::decode_tag(byte).map(Self::Ref))
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Value {
+    type Tag = ValueTag;
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
+        Ok(match tag {
+            ValueTag::Num(num) => Value::Num(num),
+            ValueTag::Vec(vec) => Value::Vec(vec),
+            ValueTag::Ref(tag) => Value::Ref(bytes.decode_with_tag(tag)?),
+        })
     }
 }
 
@@ -223,5 +256,121 @@ impl super::decode::DecodeTag for Vector {
             0x7b => Some(Self::Vec),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Reference {
+    pub heap: Heap,
+    pub is_nullable: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReferenceTag {
+    Nullable,
+    NonNullable,
+    AbsHeap(AbsHeap),
+}
+
+impl super::decode::DecodeTag for ReferenceTag {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        Some(match byte {
+            0x63 => Self::Nullable,
+            0x64 => Self::NonNullable,
+            _ => Self::AbsHeap(AbsHeap::decode_tag(byte)?),
+        })
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Reference {
+    type Tag = ReferenceTag;
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
+        Ok(match tag {
+            ReferenceTag::Nullable => Self {
+                heap: bytes.decode()?,
+                is_nullable: true,
+            },
+            ReferenceTag::NonNullable => Self {
+                heap: bytes.decode()?,
+                is_nullable: false,
+            },
+            ReferenceTag::AbsHeap(abs) => Self {
+                heap: Heap::Abstract(abs),
+                is_nullable: true,
+            },
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Heap {
+    Abstract(AbsHeap),
+    Concrete(u32), // type index
+}
+
+pub enum HeapTag {
+    Abstract(AbsHeap),
+    Concrete(u8),
+}
+
+impl super::decode::DecodeTag for HeapTag {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        if byte & 0b1100_0000 == 0 {
+            // s33 can be decoded as a positive value
+            Some(Self::Concrete(byte))
+        } else {
+            AbsHeap::decode_tag(byte).map(Self::Abstract)
+        }
+    }
+}
+
+impl<R: std::io::Read> super::decode::Decode<R> for Heap {
+    type Tag = HeapTag;
+
+    fn decode(bytes: &mut super::decode::ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self> {
+        Ok(match tag {
+            HeapTag::Abstract(abs) => Self::Abstract(abs),
+            HeapTag::Concrete(byte) => {
+                _ = byte;
+                _ = bytes;
+                unimplemented!("decode `s33`");
+            }
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AbsHeap {
+    Exception,
+    Array,
+    Struct,
+    I31,
+    Eq,
+    Any,
+    Extern,
+    Func,
+    None,
+    NoExtern,
+    NoFunc,
+    NoException,
+}
+
+impl super::decode::DecodeTag for AbsHeap {
+    fn decode_tag(byte: u8) -> Option<Self> {
+        Some(match byte {
+            0x69 => Self::Exception,
+            0x6a => Self::Array,
+            0x6b => Self::Struct,
+            0x6c => Self::I31,
+            0x6d => Self::Eq,
+            0x6e => Self::Any,
+            0x6f => Self::Extern,
+            0x70 => Self::Func,
+            0x71 => Self::NoExtern,
+            0x72 => Self::NoFunc,
+            0x73 => Self::NoException,
+            _ => return None,
+        })
     }
 }

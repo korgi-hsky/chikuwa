@@ -170,7 +170,7 @@ mod tests {
                 type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
                     is_final: true,
                     supers: vec![],
-                    ty: ty::Composite::Func {
+                    composite: ty::Composite::Func {
                         params: vec![],
                         returns: vec![],
                     },
@@ -194,7 +194,7 @@ mod tests {
                 type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
                     is_final: true,
                     supers: vec![],
-                    ty: ty::Composite::Func {
+                    composite: ty::Composite::Func {
                         params: vec![
                             ty::Value::Num(ty::Number::I32),
                             ty::Value::Num(ty::Number::I64),
@@ -221,7 +221,7 @@ mod tests {
                 type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
                     is_final: true,
                     supers: vec![],
-                    ty: ty::Composite::Func {
+                    composite: ty::Composite::Func {
                         params: vec![],
                         returns: vec![],
                     },
@@ -261,7 +261,7 @@ mod tests {
                 type_section: Some(TypeSection(vec![ty::Recursive(vec![ty::Sub {
                     is_final: true,
                     supers: vec![],
-                    ty: ty::Composite::Func {
+                    composite: ty::Composite::Func {
                         params: vec![
                             ty::Value::Num(ty::Number::I32),
                             ty::Value::Num(ty::Number::I32),
