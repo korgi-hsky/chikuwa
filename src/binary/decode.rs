@@ -1,0 +1,109 @@
+use std::io::Read as _;
+
+use anyhow::Context as _;
+
+pub trait Decode<R>: Sized {
+    type Tag: Decode<R>;
+
+    fn decode(bytes: &mut ByteReader<R>, tag: Self::Tag) -> anyhow::Result<Self>;
+}
+
+pub trait DecodeTag: Sized {
+    fn decode_tag(byte: u8) -> Option<Self>;
+}
+
+impl<R: std::io::Read, T: DecodeTag> Decode<R> for T {
+    type Tag = ();
+
+    fn decode(bytes: &mut ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        let byte = bytes.next()?;
+        Self::decode_tag(byte).with_context(|| format!("unexpected byte: 0x{byte:0>2X}"))
+    }
+}
+
+impl<R: std::io::Read> Decode<R> for () {
+    type Tag = ();
+
+    fn decode(_bytes: &mut ByteReader<R>, _: Self::Tag) -> anyhow::Result<Self> {
+        // No bytes are consumed when specify `()` as `Decode::Tag`
+        Ok(())
+    }
+}
+
+pub struct ByteReader<R> {
+    bytes: std::io::Bytes<std::io::BufReader<R>>,
+    next_byte: Option<std::io::Result<u8>>,
+    offset: usize,
+}
+
+impl<R: std::io::Read> From<R> for ByteReader<R> {
+    fn from(value: R) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T: AsRef<[u8]>> From<T> for ByteReader<std::io::Cursor<T>> {
+    fn from(value: T) -> Self {
+        std::io::Cursor::new(value).into()
+    }
+}
+
+impl<R: std::io::Read> ByteReader<R> {
+    pub fn new(reader: R) -> Self {
+        let mut bytes = std::io::BufReader::new(reader).bytes();
+        let next_byte = bytes.next();
+        Self {
+            bytes,
+            next_byte,
+            offset: 0,
+        }
+    }
+
+    pub fn next(&mut self) -> anyhow::Result<u8> {
+        let res = self.next_byte.take().context("EOF")??;
+        self.next_byte = self.bytes.next();
+        self.offset += 1;
+        Ok(res)
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.next_byte.is_none()
+    }
+
+    pub fn decode<D: Decode<R>>(&mut self) -> anyhow::Result<D>
+    where
+        D::Tag: Decode<R, Tag = ()>,
+    {
+        let tag = self.decode_with_tag(())?;
+        self.decode_with_tag(tag)
+    }
+
+    pub fn decode_with_tag<D: Decode<R>>(&mut self, tag: D::Tag) -> anyhow::Result<D> {
+        let start_offset = self.offset;
+        D::decode(self, tag).with_context(|| {
+            format!(
+                "failed to decode `{}` at byte offset 0x{:0>8X}..=0x{:0>8X}",
+                std::any::type_name::<D>(),
+                start_offset,
+                self.offset - 1,
+            )
+        })
+    }
+
+    pub fn consume_constant(&mut self, expected: impl AsRef<[u8]>) -> anyhow::Result<()> {
+        let expected = expected.as_ref();
+        let mut actual = Vec::with_capacity(expected.len());
+        for _ in 0..expected.len() {
+            actual.push(self.next()?);
+        }
+        anyhow::ensure!(expected == actual, "expected {expected:?}, got {actual:?}");
+        Ok(())
+    }
+
+    pub fn skip_bytes(&mut self, count: usize) -> anyhow::Result<()> {
+        for _ in 0..count {
+            self.next()?;
+        }
+        Ok(())
+    }
+}
